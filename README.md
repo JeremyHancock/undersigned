@@ -73,9 +73,13 @@ This starts two servers that only talk over HTTP: a broker at
 `http://localhost:8000` (it opens in your browser) and a notes service at
 `http://localhost:8001`. You create a passkey, sign a standing grant with it,
 then let the agent write notes, exceed its budget, send a tampered request,
-and try to delete everything. It is a single-user local demo: one account,
-state in memory. `tests/test_webdemo.py` drives the same two servers with a
-software passkey.
+and try to delete everything. Each visitor gets their own session (account,
+passkey, notes), held in memory and forgotten after 30 idle minutes.
+`tests/test_webdemo.py` drives the same two servers with a software passkey.
+
+The same server runs on the public internet with `--hosted`; `Dockerfile` and
+`fly.toml` deploy it to Fly.io as one machine, with the notes service
+listening only inside it.
 
 ## Who signs what
 

@@ -26,6 +26,7 @@
   h2 { font-size: 16px; margin: 0 0 8px; }
   p { margin: 0 0 12px; }
   .muted { color: var(--muted); font-size: 14px; }
+  a { color: var(--accent); }
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px;
           padding: 16px; margin-bottom: 16px; }
   .card[aria-disabled="true"] { opacity: .5; }
@@ -61,6 +62,10 @@
     <p class="muted">A broker (this page) and a notes service run as two separate servers that
       only talk over HTTP. You sign approvals with a real passkey; the service checks each
       request for itself.</p>
+    <p class="muted">This is a demo: your session and its notes are held in memory and forgotten
+      after 30 idle minutes. The passkey it creates is only for this page; you can delete it
+      from your password manager afterwards.
+      <a href="https://github.com/JeremyHancock/undersigned">Source and design notes</a>.</p>
     <p id="status" class="muted" role="status"></p>
   </header>
 

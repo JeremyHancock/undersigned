@@ -1,0 +1,37 @@
+# Fly.io config for the hosted browser demo (examples/webdemo).
+#
+# Deploy with exactly one machine: sessions live in memory.
+#   fly deploy --ha=false
+#
+# If you change the app name, change PUBLIC_URL to match. Passkeys are bound
+# to that hostname.
+
+app = "undersigned-demo"
+primary_region = "iad"
+
+[env]
+  PUBLIC_URL = "https://undersigned-demo.fly.dev"
+  PORT = "8080"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 50
+    hard_limit = 100
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "10s"
+    method = "GET"
+    path = "/healthz"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"

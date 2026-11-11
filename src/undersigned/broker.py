@@ -176,6 +176,10 @@ class Broker:
         """Record that the human confirmed the first action under this grant."""
         self._record(grant_id).state.first_use_confirmed = True
 
+    def forget(self, grant_id: str) -> None:
+        """Drop a grant's record, e.g. after it expires or its account is closed."""
+        self._records.pop(grant_id, None)
+
     # -- acting --------------------------------------------------------------
 
     def authorize(

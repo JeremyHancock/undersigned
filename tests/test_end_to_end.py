@@ -493,3 +493,23 @@ def test_one_broker_cannot_revoke_or_shadow_another_brokers_grant():
     world.verifier.accept_event(event)
     assert not world.verifier.is_revoked(ISSUER, grant.grant_id)
     assert world.call(grant).action == "notes.write"
+
+
+def test_forgetting_an_account_removes_its_pins_grants_and_revocations():
+    world = World()
+    kept, gone = world.grant(), world.grant()
+    world.broker.revoke(gone.grant_id)
+    assert world.outbox.forget_delivered() == 3 and world.outbox.deliveries == []
+
+    world.verifier.forget_account(ISSUER, "someone-else")
+    assert world.call(kept).action == "notes.write"  # other accounts are untouched
+
+    world.verifier.forget_account(ISSUER, ACCOUNT)
+    assert not world.verifier.is_revoked(ISSUER, gone.grant_id)
+    assert code_of(world.call, kept) == UnknownGrant.code
+    # Without the pin, even a genuine receipt is no longer accepted.
+    assert code_of(world.verifier.accept_grant,
+                   world.broker.receipt(kept.grant_id)) == "unknown_passkey"
+
+    world.broker.forget(kept.grant_id)
+    assert code_of(world.sign, kept) == "grant_not_found"
