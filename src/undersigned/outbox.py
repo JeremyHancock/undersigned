@@ -74,6 +74,13 @@ class Outbox:
                 delivered += self._attempt(delivery)
         return delivered
 
+    def forget_delivered(self) -> int:
+        """Drop the records of completed deliveries. Returns how many were dropped."""
+        kept = [d for d in self.deliveries if d.status != "delivered"]
+        dropped = len(self.deliveries) - len(kept)
+        self.deliveries = kept
+        return dropped
+
     def pending(self) -> list[Delivery]:
         return [d for d in self.deliveries if d.status == "queued"]
 

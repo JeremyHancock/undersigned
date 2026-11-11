@@ -79,7 +79,7 @@ class Verifier:
         # Grants and revocations are keyed by (issuer, grant_id), so one broker
         # cannot touch another broker's grants by reusing an id.
         self._grants: dict[tuple[str, str], _Held] = {}
-        self._revoked: set[tuple[str, str]] = set()
+        self._revoked: dict[tuple[str, str], str] = {}  # -> account, when known
         self._seen_proofs: dict[tuple[str, str], int] = {}  # (issuer, jti) -> expiry
 
     def _now(self) -> int:
@@ -105,6 +105,20 @@ class Verifier:
         for the account; a broker signing key alone is not enough.
         """
         self._passkeys[(issuer, subject, credential_id)] = cose_public_key
+
+    def forget_account(self, issuer: str, subject: str) -> None:
+        """Unlink an account: drop its pinned passkeys, grants and revocations."""
+        self._passkeys = {
+            key: value for key, value in self._passkeys.items() if key[:2] != (issuer, subject)
+        }
+        self._grants = {
+            key: held for key, held in self._grants.items()
+            if not (key[0] == issuer and held.grant.subject == subject)
+        }
+        self._revoked = {
+            key: account for key, account in self._revoked.items()
+            if not (key[0] == issuer and account == subject)
+        }
 
     # -- grant receipts ------------------------------------------------------
 
@@ -270,7 +284,9 @@ class Verifier:
         if not isinstance(payload, dict) or not isinstance(payload.get("grant_id"), str):
             raise SignatureError("not a grant-revoked event", code="unsupported_event")
         grant_id = payload["grant_id"]
-        self._revoked.add((issuer, grant_id))
+        sub_id = claims.get("sub_id")
+        subject = sub_id.get("id", "") if isinstance(sub_id, dict) else ""
+        self._revoked[(issuer, grant_id)] = subject if isinstance(subject, str) else ""
         held = self._grants.get((issuer, grant_id))
         if held is not None:
             held.state.revoked = True

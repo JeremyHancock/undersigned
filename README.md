@@ -15,6 +15,10 @@ Python library that lets the service check three things for itself:
 It is aimed at non-payment actions: writing a record, sending a message,
 deleting data.
 
+**[Try the live demo](https://undersigned-demo.fly.dev)** with your own
+passkey: approve an envelope, watch an agent act inside and outside it, then
+revoke. It takes about a minute.
+
 [Design notes](docs/why.md): why an envelope, who signs what, and what an
 adversarial review broke.
 
@@ -73,9 +77,13 @@ This starts two servers that only talk over HTTP: a broker at
 `http://localhost:8000` (it opens in your browser) and a notes service at
 `http://localhost:8001`. You create a passkey, sign a standing grant with it,
 then let the agent write notes, exceed its budget, send a tampered request,
-and try to delete everything. It is a single-user local demo: one account,
-state in memory. `tests/test_webdemo.py` drives the same two servers with a
-software passkey.
+and try to delete everything. Each visitor gets their own session (account,
+passkey, notes), held in memory and forgotten after 30 idle minutes.
+`tests/test_webdemo.py` drives the same two servers with a software passkey.
+
+The same server runs on the public internet with `--hosted`; `Dockerfile` and
+`fly.toml` deploy it to Fly.io as one machine, with the notes service
+listening only inside it. That is what the live demo linked above runs.
 
 ## Who signs what
 
@@ -129,8 +137,11 @@ except StepUpRequired as why:   # first_use, budget_exceeded, risk_exceeds_grant
     ...                         # ask the person; for one action, a single-use grant
 # Send the request with exactly that method, url and body, plus `headers`.
 
-# 4. When the person revokes:
+# 4. When the person revokes one grant, or everything they have granted here.
+#    Grants are independent: an unused single-use approval outlives the standing
+#    grant unless you revoke the account.
 event = broker.revoke(grant.grant_id)
+events = broker.revoke_account("https://notes.example", "acct_42")
 ```
 
 Service side:

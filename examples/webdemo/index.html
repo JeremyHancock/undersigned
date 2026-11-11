@@ -26,6 +26,7 @@
   h2 { font-size: 16px; margin: 0 0 8px; }
   p { margin: 0 0 12px; }
   .muted { color: var(--muted); font-size: 14px; }
+  a { color: var(--accent); }
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px;
           padding: 16px; margin-bottom: 16px; }
   .card[aria-disabled="true"] { opacity: .5; }
@@ -61,6 +62,10 @@
     <p class="muted">A broker (this page) and a notes service run as two separate servers that
       only talk over HTTP. You sign approvals with a real passkey; the service checks each
       request for itself.</p>
+    <p class="muted">This is a demo: your session and its notes are held in memory and forgotten
+      after 30 idle minutes. The passkey it creates is only for this page; you can delete it
+      from your password manager afterwards.
+      <a href="https://github.com/JeremyHancock/undersigned">Source and design notes</a>.</p>
     <p id="status" class="muted" role="status"></p>
   </header>
 
@@ -96,9 +101,10 @@
 
     <div class="card" id="card-revoke" aria-disabled="true">
       <h2><span class="step">4</span>Revoke</h2>
-      <p class="muted">Ends the standing grant at the broker and pushes a signed revocation
-        event to the service.</p>
-      <button id="btn-revoke" disabled>Revoke standing grant</button>
+      <p class="muted">Ends every grant you have made, including any single-use approval you
+        signed but the agent has not used yet, and pushes a signed revocation event for each
+        to the service.</p>
+      <button id="btn-revoke" disabled>Revoke all grants</button>
     </div>
 
     <div class="card">
@@ -294,6 +300,8 @@ async function act(scenario) {
       lines.push(`signed: ${result.body_signed}`, `sent:   ${result.body_sent}`);
     }
     log(labels[scenario], `refused by ${result.by}`, "no", lines);
+    // A spent single-use grant is done with: the next attempt asks again.
+    if (result.code === "grant_already_used") state.purgeGrant = null;
   }
   await refreshNotes();
 }
@@ -320,10 +328,14 @@ for (const button of document.querySelectorAll("[data-scenario]")) {
   button.addEventListener("click", () => run(() => act(button.dataset.scenario)));
 }
 $("btn-revoke").addEventListener("click", () => run(async () => {
-  const result = await api("/api/grants/revoke", { grant_id: state.standing });
-  log("Standing grant revoked", "revoked", "no",
-    [result.delivered_to_service ? "The service accepted the signed revocation event."
-                                 : "Revocation queued for the service; the broker already refuses."]);
+  const result = await api("/api/grants/revoke", {});
+  const count = result.revoked === 1 ? "1 grant" : `${result.revoked} grants`;
+  log(`All grants revoked (${count})`, "revoked", "no",
+    [result.delivered_to_service
+      ? "The service accepted a signed revocation event for each."
+      : "Revocations queued for the service; the broker already refuses."]);
+  state.purgeGrant = null;
+  $("approval-purge").textContent = "";
   $("btn-revoke").disabled = true;
 }));
 

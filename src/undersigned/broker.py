@@ -176,6 +176,32 @@ class Broker:
         """Record that the human confirmed the first action under this grant."""
         self._record(grant_id).state.first_use_confirmed = True
 
+    def revoke_account(
+        self, audience: str, subject: str, *, initiating_entity: str = "user"
+    ) -> list[str]:
+        """Revoke every grant an account still holds at one service.
+
+        Grants are independent: revoking a standing grant leaves an unused
+        single-use approval valid. This is what "stop everything" should call.
+        Returns the revocation events, one per grant.
+        """
+        now = self._now()
+        events = []
+        for record in list(self._records.values()):
+            grant = record.grant
+            if grant.audience != audience or grant.subject != subject:
+                continue
+            # A single-use grant the broker has already signed for is included:
+            # that request may still be on its way to the service.
+            if record.state.revoked or now >= grant.expires_at:
+                continue
+            events.append(self.revoke(grant.grant_id, initiating_entity=initiating_entity))
+        return events
+
+    def forget(self, grant_id: str) -> None:
+        """Drop a grant's record, e.g. after it expires or its account is closed."""
+        self._records.pop(grant_id, None)
+
     # -- acting --------------------------------------------------------------
 
     def authorize(
