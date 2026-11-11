@@ -15,6 +15,10 @@ Python library that lets the service check three things for itself:
 It is aimed at non-payment actions: writing a record, sending a message,
 deleting data.
 
+**[Try the live demo](https://undersigned-demo.fly.dev)** with your own
+passkey: approve an envelope, watch an agent act inside and outside it, then
+revoke. It takes about a minute.
+
 [Design notes](docs/why.md): why an envelope, who signs what, and what an
 adversarial review broke.
 
@@ -79,7 +83,7 @@ passkey, notes), held in memory and forgotten after 30 idle minutes.
 
 The same server runs on the public internet with `--hosted`; `Dockerfile` and
 `fly.toml` deploy it to Fly.io as one machine, with the notes service
-listening only inside it.
+listening only inside it. That is what the live demo linked above runs.
 
 ## Who signs what
 
