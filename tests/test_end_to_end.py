@@ -513,3 +513,31 @@ def test_forgetting_an_account_removes_its_pins_grants_and_revocations():
 
     world.broker.forget(kept.grant_id)
     assert code_of(world.sign, kept) == "grant_not_found"
+
+
+def test_revoking_an_account_ends_every_live_grant_including_unused_approvals():
+    world = World()
+    standing = world.grant()
+    purge = b'{"confirm":"all"}'
+    unused = world.grant(actions=["notes.purge"], max_risk="critical", single_use=True,
+                         duration=300, request=PinnedRequest.of("POST", URL, purge))
+    used = world.grant(actions=["notes.purge"], max_risk="critical", single_use=True,
+                       duration=300)
+    world.call(used, "notes.purge", purge)
+    pending = world.broker.propose(audience=SERVICE, subject=ACCOUNT, actions=["notes.read"],
+                                   duration=3600)
+    elsewhere = world.broker.propose(audience="https://other.example", subject=ACCOUNT,
+                                     actions=["notes.read"], duration=3600)
+    in_flight = world.sign(unused, "notes.purge", purge)
+
+    # Revoking the standing grant alone leaves the separate approval usable...
+    world.broker.revoke(standing.grant_id)
+    assert world.broker.revoke_account(SERVICE, ACCOUNT)  # ...so revoke the account.
+
+    assert world.verifier.is_revoked(ISSUER, unused.grant_id)
+    assert world.verifier.is_revoked(ISSUER, used.grant_id)
+    assert code_of(world.sign, unused, "notes.purge", purge) == "grant_revoked"
+    assert code_of(world.receive, in_flight, action="notes.purge", body=purge) == "grant_revoked"
+    assert code_of(world.broker.activate, pending.grant_id) == "grant_revoked"
+    world.broker.activate(elsewhere.grant_id)  # another service's grants are untouched
+    assert world.broker.revoke_account(SERVICE, ACCOUNT) == []

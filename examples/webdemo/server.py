@@ -433,10 +433,13 @@ class BrokerApp:
         self.broker.activate(grant_id, evidence, credential_public_key=session.passkey[1])
         return {"grant_id": grant_id, "delivered_to_service": not self.broker.outbox.pending()}
 
-    def _revoke(self, session: Session, data: dict) -> dict:
-        grant_id = self._own(session, data["grant_id"])
-        self.broker.revoke(grant_id)
-        return {"revoked": grant_id, "delivered_to_service": not self.broker.outbox.pending()}
+    def _revoke(self, session: Session, _data: dict) -> dict:
+        """Revoke everything this account has granted, not just the standing grant:
+        an unused single-use approval is a separate grant and would otherwise
+        still work."""
+        events = self.broker.revoke_account(self.service_url, session.subject)
+        return {"revoked": len(events),
+                "delivered_to_service": not self.broker.outbox.pending()}
 
     # -- the agent ---------------------------------------------------------------
 

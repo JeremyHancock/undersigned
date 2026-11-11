@@ -133,8 +133,11 @@ except StepUpRequired as why:   # first_use, budget_exceeded, risk_exceeds_grant
     ...                         # ask the person; for one action, a single-use grant
 # Send the request with exactly that method, url and body, plus `headers`.
 
-# 4. When the person revokes:
+# 4. When the person revokes one grant, or everything they have granted here.
+#    Grants are independent: an unused single-use approval outlives the standing
+#    grant unless you revoke the account.
 event = broker.revoke(grant.grant_id)
+events = broker.revoke_account("https://notes.example", "acct_42")
 ```
 
 Service side:

@@ -140,8 +140,8 @@ def test_full_flow_over_http(demo):
     assert (again["outcome"], again["code"]) == ("refused", "grant_already_used")
 
     # Revocation stops the broker and reaches the service.
-    status, revoked = visitor.call("/api/grants/revoke", {"grant_id": standing})
-    assert status == 200 and revoked["delivered_to_service"] is True
+    status, revoked = visitor.call("/api/grants/revoke", {})
+    assert status == 200 and revoked == {"revoked": 2, "delivered_to_service": True}
     after = visitor.agent(standing, "read")
     assert (after["outcome"], after["by"], after["code"]) == ("refused", "broker", "grant_revoked")
 
@@ -190,11 +190,14 @@ def test_visitors_are_isolated_from_each_other(demo):
     alice.agent(alices, "write")
     assert alice.notes() == ["Note 1"] and bob.notes() == []
 
-    # Bob cannot act under, or revoke, Alice's grant.
+    # Bob cannot act under Alice's grant, and his revoking does not touch hers.
     status, body = bob.call("/api/agent", {"grant_id": alices, "scenario": "write"})
     assert status == 400 and "no such grant" in body["message"]
-    assert bob.call("/api/grants/revoke", {"grant_id": alices})[0] == 400
+    spare, _, _ = bob.approve("standing")
+    assert bob.call("/api/grants/revoke", {})[1]["revoked"] == 2
+    assert bob.agent(spare, "read")["code"] == "grant_revoked"
     assert alice.agent(alices, "write")["outcome"] == "verified"
+    bobs, _, _ = bob.approve("standing")
     assert bob.agent(bobs, "write")["service_response"]["notes"] == ["Note 1"]
 
     # One session, one passkey.
@@ -266,3 +269,19 @@ def test_page_and_oversized_requests(demo):
     assert http(broker_url + "/healthz")[1] == {"ok": True}
     status, body, _ = http(broker_url + "/api/agent", raw=b"x" * (server.MAX_BODY + 1))
     assert (status, body["error"]) == (413, "too_large")
+
+
+def test_revoking_also_ends_an_unused_single_use_approval(demo):
+    """Found by hand on the live demo: approve a delete, revoke, then delete."""
+    broker_url, _, _ = demo
+    visitor = Visitor(broker_url)
+    visitor.register()
+    standing, _, _ = visitor.approve("standing")
+    visitor.agent(standing, "write")
+    once, _, _ = visitor.approve("purge")  # approved but not yet used
+
+    status, revoked = visitor.call("/api/grants/revoke", {})
+    assert status == 200 and revoked == {"revoked": 2, "delivered_to_service": True}
+    purge = visitor.agent(once, "purge")
+    assert (purge["outcome"], purge["by"], purge["code"]) == ("refused", "broker", "grant_revoked")
+    assert visitor.notes() == ["Note 1"]
