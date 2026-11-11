@@ -11,7 +11,7 @@ from undersigned.errors import (
     UnknownGrant,
 )
 from undersigned.evidence import HumanEvidence
-from undersigned.grant import Budget, Grant
+from undersigned.grant import Budget, Grant, PinnedRequest
 from undersigned.keys import KeySet, SigningKey
 from undersigned.outbox import Outbox
 from undersigned.service import BrokerTrust, VerifiedAction, Verifier, push_error
@@ -28,6 +28,7 @@ __all__ = [
     "InvalidGrant",
     "KeySet",
     "Outbox",
+    "PinnedRequest",
     "ServiceEndpoints",
     "SignatureError",
     "SigningKey",

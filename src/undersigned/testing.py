@@ -10,10 +10,11 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec
 
 from undersigned.evidence import HumanEvidence
-from undersigned.keys import b64url
+from undersigned.keys import b64url, b64url_decode
 
 _FLAG_USER_PRESENT = 0x01
 _FLAG_USER_VERIFIED = 0x04
+_FLAG_ATTESTED_DATA = 0x40
 
 
 class SoftAuthenticator:
@@ -67,3 +68,57 @@ class SoftAuthenticator:
             client_data_json=b64url(client_data_json),
             signature=b64url(signature),
         )
+
+    def assertion(self, challenge: bytes, *, rp_id: str, origin: str) -> dict:
+        """The JSON a browser gets back from ``navigator.credentials.get``."""
+        evidence = self.sign(challenge, rp_id=rp_id, origin=origin)
+        return {
+            "id": self.credential_id,
+            "rawId": self.credential_id,
+            "type": "public-key",
+            "response": {
+                "authenticatorData": evidence.authenticator_data,
+                "clientDataJSON": evidence.client_data_json,
+                "signature": evidence.signature,
+            },
+        }
+
+    def register(self, challenge: bytes, *, rp_id: str, origin: str) -> dict:
+        """The JSON a browser gets back from ``navigator.credentials.create``.
+
+        Uses the ``none`` attestation format, as most passkeys do.
+        """
+        credential_id = b64url_decode(self.credential_id)
+        flags = _FLAG_USER_PRESENT | _FLAG_USER_VERIFIED | _FLAG_ATTESTED_DATA
+        authenticator_data = (
+            hashlib.sha256(rp_id.encode("utf-8")).digest()
+            + bytes([flags])
+            + (0).to_bytes(4, "big")
+            + bytes(16)  # AAGUID
+            + len(credential_id).to_bytes(2, "big")
+            + credential_id
+            + self.cose_public_key
+        )
+        # CBOR map {"fmt": "none", "attStmt": {}, "authData": <bytes>}
+        attestation_object = (
+            b"\xa3\x63fmt\x64none\x67attStmt\xa0\x68authData"
+            + b"\x59" + len(authenticator_data).to_bytes(2, "big") + authenticator_data
+        )
+        client_data_json = json.dumps(
+            {
+                "type": "webauthn.create",
+                "challenge": b64url(challenge),
+                "origin": origin,
+                "crossOrigin": False,
+            },
+            separators=(",", ":"),
+        ).encode("utf-8")
+        return {
+            "id": self.credential_id,
+            "rawId": self.credential_id,
+            "type": "public-key",
+            "response": {
+                "clientDataJSON": b64url(client_data_json),
+                "attestationObject": b64url(attestation_object),
+            },
+        }

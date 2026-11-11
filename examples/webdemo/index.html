@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>undersigned demo</title>
+<style>
+  :root {
+    --bg: #f6f5f1; --card: #ffffff; --ink: #1c1b19; --muted: #6b6860; --line: #dedbd2;
+    --accent: #1f5fbf; --ok: #1a7f4b; --no: #b3261e; --ask: #9a6400; --code: #f0eee8;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #151514; --card: #1f1f1d; --ink: #ecebe6; --muted: #a09d94; --line: #34332f;
+      --accent: #7fb0ff; --ok: #5fd39a; --no: #ff8a80; --ask: #f0b955; --code: #2a2926;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 1080px; margin: 0 auto; padding: 32px 16px 64px;
+         display: grid; gap: 24px; grid-template-columns: minmax(0, 1fr); }
+  @media (min-width: 900px) { main { grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); } }
+  header { grid-column: 1 / -1; }
+  h1 { font-size: 28px; margin: 0 0 4px; letter-spacing: -0.01em; }
+  h2 { font-size: 16px; margin: 0 0 8px; }
+  p { margin: 0 0 12px; }
+  .muted { color: var(--muted); font-size: 14px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+          padding: 16px; margin-bottom: 16px; }
+  .card[aria-disabled="true"] { opacity: .5; }
+  .step { display: inline-block; width: 24px; height: 24px; border-radius: 50%;
+          background: var(--ink); color: var(--card); text-align: center; font-size: 13px;
+          line-height: 24px; margin-right: 8px; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; }
+  button { font: inherit; padding: 8px 14px; border-radius: 8px; border: 1px solid var(--line);
+           background: var(--card); color: var(--ink); cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  @media (prefers-color-scheme: dark) { button.primary { color: #10100f; } }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  ul { margin: 0 0 12px; padding-left: 20px; }
+  code, pre { font: 12.5px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  pre { background: var(--code); border-radius: 8px; padding: 10px; margin: 8px 0 0;
+        overflow-x: auto; white-space: pre-wrap; word-break: break-all; }
+  details summary { cursor: pointer; color: var(--muted); font-size: 14px; }
+  .approval { border: 1px solid var(--accent); border-radius: 8px; padding: 12px; margin-top: 12px; }
+  .entry { border-top: 1px solid var(--line); padding: 12px 0; }
+  .entry:first-child { border-top: 0; padding-top: 0; }
+  .badge { display: inline-block; font-size: 12.5px; font-weight: 600; padding: 2px 8px;
+           border-radius: 999px; border: 1px solid currentColor; margin-right: 8px; }
+  .ok { color: var(--ok); } .no { color: var(--no); } .ask { color: var(--ask); }
+  #status { min-height: 24px; }
+  #notes li { font-size: 14px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>undersigned</h1>
+    <p class="muted">A broker (this page) and a notes service run as two separate servers that
+      only talk over HTTP. You sign approvals with a real passkey; the service checks each
+      request for itself.</p>
+    <p id="status" class="muted" role="status"></p>
+  </header>
+
+  <section aria-label="Steps">
+    <div class="card" id="card-passkey">
+      <h2><span class="step">1</span>Create a passkey</h2>
+      <p class="muted">Registers a passkey with the broker. The broker then links your account
+        at the service, which pins the passkey's public key.</p>
+      <button class="primary" id="btn-register">Create passkey</button>
+    </div>
+
+    <div class="card" id="card-grant" aria-disabled="true">
+      <h2><span class="step">2</span>Approve a standing grant</h2>
+      <p class="muted">One approval for an envelope of actions. Your passkey signs the digest of
+        the grant document itself.</p>
+      <button class="primary" id="btn-standing" disabled>Review standing grant</button>
+      <div id="approval-standing"></div>
+    </div>
+
+    <div class="card" id="card-agent" aria-disabled="true">
+      <h2><span class="step">3</span>Let the agent act</h2>
+      <p class="muted">Each button makes the agent send one request to the service.</p>
+      <div class="row">
+        <button data-scenario="write" disabled>Write a note</button>
+        <button data-scenario="read" disabled>Read notes</button>
+        <button data-scenario="tamper" disabled>Send a tampered body</button>
+        <button data-scenario="purge" disabled>Delete all notes</button>
+      </div>
+      <p class="muted" style="margin-top:12px">The grant allows 3 writes a day. Deleting
+        everything is critical risk, so it can never be covered by a standing grant.</p>
+      <div id="approval-purge"></div>
+    </div>
+
+    <div class="card" id="card-revoke" aria-disabled="true">
+      <h2><span class="step">4</span>Revoke</h2>
+      <p class="muted">Ends the standing grant at the broker and pushes a signed revocation
+        event to the service.</p>
+      <button id="btn-revoke" disabled>Revoke standing grant</button>
+    </div>
+
+    <div class="card">
+      <h2>Notes held by the service</h2>
+      <ul id="notes"><li class="muted">None yet.</li></ul>
+    </div>
+  </section>
+
+  <section aria-label="What happened">
+    <div class="card">
+      <h2>What happened</h2>
+      <div id="log"><p class="muted">Nothing yet. Start with step 1.</p></div>
+    </div>
+  </section>
+</main>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const state = { standing: null, purgeGrant: null };
+
+const b64u = {
+  toBuf(text) {
+    const padded = text.replace(/-/g, "+").replace(/_/g, "/")
+      .padEnd(Math.ceil(text.length / 4) * 4, "=");
+    return Uint8Array.from(atob(padded), (c) => c.charCodeAt(0)).buffer;
+  },
+  fromBuf(buffer) {
+    let binary = "";
+    for (const byte of new Uint8Array(buffer)) binary += String.fromCharCode(byte);
+    return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  },
+};
+
+async function api(path, body) {
+  const response = await fetch(path, body === undefined ? {} : {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.message || data.error || "request failed");
+  return data;
+}
+
+function el(tag, attrs = {}, ...children) {
+  const node = document.createElement(tag);
+  for (const [key, value] of Object.entries(attrs)) {
+    if (key === "class") node.className = value; else node.setAttribute(key, value);
+  }
+  for (const child of children) node.append(child);
+  return node;
+}
+
+function setStatus(text, kind = "") {
+  $("status").textContent = text;
+  $("status").className = kind || "muted";
+}
+
+function enable(cardId, on = true) {
+  const card = $(cardId);
+  card.setAttribute("aria-disabled", on ? "false" : "true");
+  for (const button of card.querySelectorAll("button")) button.disabled = !on;
+}
+
+function log(title, badge, kind, lines = [], details = null) {
+  const logNode = $("log");
+  if (logNode.firstElementChild && logNode.firstElementChild.tagName === "P") logNode.textContent = "";
+  const entry = el("div", { class: "entry" },
+    el("div", {}, el("span", { class: `badge ${kind}` }, badge), el("strong", {}, title)));
+  for (const line of lines) entry.append(el("div", { class: "muted" }, line));
+  if (details) {
+    entry.append(el("details", {}, el("summary", {}, details.label),
+      el("pre", {}, details.text)));
+  }
+  logNode.prepend(entry);
+}
+
+async function refreshNotes() {
+  const service = await api("/api/service");
+  const list = $("notes");
+  list.textContent = "";
+  if (!service.notes.length) list.append(el("li", { class: "muted" }, "None."));
+  for (const note of service.notes) list.append(el("li", {}, note));
+}
+
+// -- step 1: passkey ---------------------------------------------------------
+
+async function register() {
+  const options = await api("/api/register/options", {});
+  const credential = await navigator.credentials.create({ publicKey: {
+    ...options,
+    challenge: b64u.toBuf(options.challenge),
+    user: { ...options.user, id: b64u.toBuf(options.user.id) },
+    excludeCredentials: (options.excludeCredentials || []).map(
+      (c) => ({ ...c, id: b64u.toBuf(c.id) })),
+  } });
+  const result = await api("/api/register/verify", { credential: {
+    id: credential.id,
+    rawId: b64u.fromBuf(credential.rawId),
+    type: credential.type,
+    response: {
+      clientDataJSON: b64u.fromBuf(credential.response.clientDataJSON),
+      attestationObject: b64u.fromBuf(credential.response.attestationObject),
+    },
+  } });
+  log("Passkey created and account linked", "done", "ok",
+    [`The service pinned this passkey to ${result.account}.`],
+    { label: "Credential id", text: result.credential_id });
+  $("btn-register").disabled = true;
+  enable("card-grant");
+}
+
+// -- approving a grant with the passkey ---------------------------------------
+
+async function review(kind, containerId, onApproved) {
+  const proposal = await api("/api/grants/propose", { kind });
+  const container = $(containerId);
+  container.textContent = "";
+  const list = el("ul");
+  for (const line of proposal.summary) list.append(el("li", {}, line));
+  const approve = el("button", { class: "primary" }, "Approve with passkey");
+  const cancel = el("button", {}, "Cancel");
+  container.append(el("div", { class: "approval" },
+    el("strong", {}, "You are approving:"), list,
+    el("details", {}, el("summary", {}, "The exact document your passkey signs"),
+      el("pre", {}, JSON.stringify(proposal.document, null, 2)),
+      el("pre", {}, `SHA-256 of its canonical form (the WebAuthn challenge):\n${proposal.digest_hex}`)),
+    el("div", { class: "row", style: "margin-top:12px" }, approve, cancel)));
+  cancel.addEventListener("click", () => { container.textContent = ""; });
+  approve.addEventListener("click", () => run(async () => {
+    const assertion = await navigator.credentials.get({ publicKey: {
+      challenge: b64u.toBuf(proposal.challenge),
+      rpId: proposal.rp_id,
+      allowCredentials: [{ type: "public-key", id: b64u.toBuf(proposal.credential_id) }],
+      userVerification: "required",
+    } });
+    const activated = await api("/api/grants/activate", {
+      grant_id: proposal.grant_id,
+      credential: {
+        id: assertion.id,
+        rawId: b64u.fromBuf(assertion.rawId),
+        type: assertion.type,
+        response: {
+          authenticatorData: b64u.fromBuf(assertion.response.authenticatorData),
+          clientDataJSON: b64u.fromBuf(assertion.response.clientDataJSON),
+          signature: b64u.fromBuf(assertion.response.signature),
+        },
+      },
+    });
+    container.textContent = "";
+    log(kind === "standing" ? "Standing grant signed" : "Single-use grant signed", "signed", "ok",
+      [activated.delivered_to_service
+        ? "The service verified your passkey's signature over the grant and stored it."
+        : "Receipt queued; the service was unreachable."],
+      { label: "Grant document", text: JSON.stringify(proposal.document, null, 2) });
+    onApproved(proposal.grant_id);
+  }));
+}
+
+// -- step 3: the agent ---------------------------------------------------------
+
+const labels = {
+  write: "Agent: write a note", read: "Agent: read notes",
+  tamper: "Agent: request with a tampered body", purge: "Agent: delete all notes",
+};
+const reasons = {
+  budget_exceeded: "Over the 3-writes-a-day budget, so the broker would ask you first.",
+  action_not_covered: "Not covered by the standing grant. It needs its own approval.",
+  risk_exceeds_grant: "Riskier than the standing grant allows. It needs its own approval.",
+  digest_mismatch: "The body that arrived is not the body that was signed.",
+  grant_already_used: "A single-use grant only works once.",
+  grant_revoked: "The grant has been revoked.",
+};
+
+async function act(scenario) {
+  const grantId = scenario === "purge" && state.purgeGrant ? state.purgeGrant : state.standing;
+  const result = await api("/api/agent", { grant_id: grantId, scenario });
+  const why = reasons[result.code] || result.code;
+  if (result.outcome === "verified") {
+    const response = result.service_response;
+    log(labels[scenario], "verified by service", "ok", [
+      `human_verified: ${response.human_verified}` +
+        (response.single_use_grant ? " (single-use grant)" : ""),
+    ], { label: "Headers the broker attached", text: Object.entries(result.headers)
+      .map(([name, value]) => `${name}: ${value}`).join("\n\n") });
+  } else if (result.outcome === "step_up") {
+    log(labels[scenario], "needs your approval", "ask", [why]);
+    if (scenario === "purge") {
+      await review("purge", "approval-purge", (id) => { state.purgeGrant = id; });
+    }
+  } else {
+    const lines = [why];
+    if (scenario === "tamper") {
+      lines.push(`signed: ${result.body_signed}`, `sent:   ${result.body_sent}`);
+    }
+    log(labels[scenario], `refused by ${result.by}`, "no", lines);
+  }
+  await refreshNotes();
+}
+
+// -- wiring --------------------------------------------------------------------
+
+async function run(task) {
+  setStatus("");
+  try { await task(); } catch (error) {
+    const cancelled = error && (error.name === "NotAllowedError" || error.name === "AbortError");
+    setStatus(cancelled ? "Passkey prompt was cancelled." : `Error: ${error.message}`, "no");
+  }
+}
+
+$("btn-register").addEventListener("click", () => run(register));
+$("btn-standing").addEventListener("click", () => run(() =>
+  review("standing", "approval-standing", (id) => {
+    state.standing = id;
+    $("btn-standing").disabled = true;
+    enable("card-agent");
+    enable("card-revoke");
+  })));
+for (const button of document.querySelectorAll("[data-scenario]")) {
+  button.addEventListener("click", () => run(() => act(button.dataset.scenario)));
+}
+$("btn-revoke").addEventListener("click", () => run(async () => {
+  const result = await api("/api/grants/revoke", { grant_id: state.standing });
+  log("Standing grant revoked", "revoked", "no",
+    [result.delivered_to_service ? "The service accepted the signed revocation event."
+                                 : "Revocation queued for the service; the broker already refuses."]);
+  $("btn-revoke").disabled = true;
+}));
+
+if (!window.PublicKeyCredential) {
+  setStatus("This browser does not support passkeys.", "no");
+  $("btn-register").disabled = true;
+}
+</script>
+</body>
+</html>

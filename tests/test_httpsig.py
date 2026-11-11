@@ -140,3 +140,13 @@ def test_other_signatures_on_the_request_are_ignored():
         "Signature-Input"]
     headers["Signature"] = "proxy=:AAAA:, " + headers["Signature"]
     verify(key, headers)
+
+
+@pytest.mark.parametrize("created", ["--1", "²", "١٢", "1e3"])
+def test_non_ascii_or_malformed_integers_are_rejected_cleanly(created):
+    key = SigningKey.generate()
+    headers = signed(key)
+    headers["Signature-Input"] = headers["Signature-Input"].replace(
+        f"created={NOW}", f"created={created}")
+    with pytest.raises(SignatureError):
+        verify(key, headers)

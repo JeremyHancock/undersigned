@@ -3,7 +3,7 @@ import pytest
 from undersigned import jcs
 from undersigned.errors import EvidenceError, InvalidGrant
 from undersigned.evidence import HumanEvidence, verify_evidence
-from undersigned.grant import Budget, Grant
+from undersigned.grant import Budget, Grant, PinnedRequest
 from undersigned.policy import ALLOW, DENY, STEP_UP, GrantState, evaluate, record_use
 from undersigned.testing import SoftAuthenticator
 
@@ -146,14 +146,17 @@ def test_single_use_grant_is_spent_after_one_use():
     grant = Grant(
         issuer="https://broker.example", audience="https://notes.example", subject="acct_42",
         actions=("notes.purge",), issued_at=T0, expires_at=T0 + 300, max_risk="critical",
-        single_use=True, content_digest="sha-256=:abc=:",
+        single_use=True,
+        request=PinnedRequest("POST", "https://notes.example/v1/purge", "sha-256=:abc=:"),
     )
+    assert Grant.from_document(grant.to_document()) == grant
     state = GrantState()
-    kw = dict(action="notes.purge", risk="critical", content_digest="sha-256=:abc=:")
+    kw = dict(action="notes.purge", risk="critical", method="POST",
+              url="https://notes.example/v1/purge", content_digest="sha-256=:abc=:")
     assert decide(grant, state, **kw).outcome == ALLOW
-    assert decide(grant, state, **{**kw, "content_digest": "sha-256=:zzz=:"}).reason == (
-        "request_does_not_match_grant"
-    )
+    for change in ({"content_digest": "sha-256=:zzz=:"}, {"method": "DELETE"},
+                   {"url": "https://notes.example/v1/purge?all=1"}):
+        assert decide(grant, state, **{**kw, **change}).reason == "request_does_not_match_grant"
     record_use(grant, state, now=T0 + 10)
     assert decide(grant, state, **kw).reason == "grant_already_used"
 
@@ -199,3 +202,21 @@ def test_assertion_without_user_verification_fails():
     with pytest.raises(EvidenceError):
         verify_evidence(evidence, challenge=grant.digest(), rp_id=RP_ID, origin=ORIGIN,
                         credential_public_key=passkey.cose_public_key)
+
+
+def test_a_clock_behind_the_issuer_does_not_open_an_extra_budget_period():
+    grant = standing(budget=Budget(3, "writes", "day"))
+    state = GrantState()
+    record_use(grant, state, amount=3, now=T0 - 3)  # accepted inside clock leeway
+    assert decide(grant, state, amount=1, now=T0 + 1).reason == "budget_exceeded"
+
+
+@pytest.mark.parametrize("field, value", [("issued_at", -1), ("expires_at", 2**60)])
+def test_out_of_range_timestamps_are_invalid_grants(field, value):
+    with pytest.raises(InvalidGrant):
+        standing(**{field: value})
+
+
+def test_out_of_range_budget_is_an_invalid_grant():
+    with pytest.raises(InvalidGrant):
+        Budget(2**60, "writes")

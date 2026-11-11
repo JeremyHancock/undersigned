@@ -50,6 +50,9 @@ class _Held:
 class Verifier:
     """Checks grant receipts, per-request proofs and revocation events.
 
+    ``risk_of(action)`` and ``cost_of(action, body)`` are the service's own
+    catalog. Nothing the broker claims about risk or cost is taken on trust.
+
     State is kept in memory. A real deployment would persist the pinned
     passkeys, the grants with their counters, and revocations.
     """
@@ -60,6 +63,7 @@ class Verifier:
         audience: str,
         brokers: Mapping[str, BrokerTrust],
         risk_of: Callable[[str], str | None],
+        cost_of: Callable[[str, bytes], int] = lambda action, body: 0,
         require_human_evidence: bool = True,
         clock: Callable[[], float] = time.time,
         leeway: int = 5,
@@ -67,15 +71,16 @@ class Verifier:
         self.audience = audience
         self.brokers = dict(brokers)
         self._risk_of = risk_of
+        self._cost_of = cost_of
         self.require_human_evidence = require_human_evidence
         self._clock = clock
         self._leeway = leeway
-        self._passkeys: dict[tuple[str, str], bytes] = {}
+        self._passkeys: dict[tuple[str, str, str], bytes] = {}
         # Grants and revocations are keyed by (issuer, grant_id), so one broker
         # cannot touch another broker's grants by reusing an id.
         self._grants: dict[tuple[str, str], _Held] = {}
         self._revoked: set[tuple[str, str]] = set()
-        self._seen_proofs: dict[str, int] = {}  # jti -> expiry
+        self._seen_proofs: dict[tuple[str, str], int] = {}  # (issuer, jti) -> expiry
 
     def _now(self) -> int:
         return int(self._clock())
@@ -89,14 +94,17 @@ class Verifier:
 
     # -- account linking -----------------------------------------------------
 
-    def pin_passkey(self, subject: str, credential_id: str, cose_public_key: bytes) -> None:
-        """Record a passkey as belonging to one of this service's accounts.
+    def pin_passkey(
+        self, issuer: str, subject: str, credential_id: str, cose_public_key: bytes
+    ) -> None:
+        """Record a passkey, registered at broker ``issuer``, for one of this
+        service's accounts.
 
         Do this when the account is linked to the broker, over a channel the
         service trusts. From then on only that authenticator can sign grants
         for the account; a broker signing key alone is not enough.
         """
-        self._passkeys[(subject, credential_id)] = cose_public_key
+        self._passkeys[(issuer, subject, credential_id)] = cose_public_key
 
     # -- grant receipts ------------------------------------------------------
 
@@ -125,7 +133,7 @@ class Verifier:
         raw_evidence = claims.get("evidence")
         if raw_evidence is not None:
             evidence = HumanEvidence.from_dict(raw_evidence)
-            public_key = self._passkeys.get((grant.subject, evidence.credential_id))
+            public_key = self._passkeys.get((issuer, grant.subject, evidence.credential_id))
             if public_key is None:
                 raise EvidenceError("passkey is not pinned to this account", code="unknown_passkey")
             verify_evidence(
@@ -144,6 +152,7 @@ class Verifier:
     def verify_request(
         self,
         *,
+        action: str,
         method: str,
         url: str,
         headers: Mapping[str, str],
@@ -151,8 +160,10 @@ class Verifier:
     ) -> VerifiedAction:
         """Verify one incoming request. Raises unless every check passes.
 
-        ``url`` is the absolute URL the service is addressed by, as the broker
-        sent it. On success the action is counted against the grant.
+        ``action`` is the action this endpoint performs, as the service's own
+        routing decided it; a proof for any other action is refused. ``url`` is
+        the absolute URL the request was addressed to, query string included.
+        On success the action is counted against the grant.
         """
         now = self._now()
         lowered = {str(k).lower(): str(v) for k, v in headers.items()}
@@ -175,11 +186,13 @@ class Verifier:
         )
         self._forget_expired_proofs(now)
         proof_id = claims["jti"]
-        if proof_id in self._seen_proofs:
+        if (issuer, proof_id) in self._seen_proofs:
             raise Denied("proof was already used", code="proof_replayed")
 
         # 3. It refers to a grant this service holds, unchanged.
-        action, amount = _action_of(claims, self.audience)
+        proved_action, amount = _action_of(claims, self.audience)
+        if proved_action != action:
+            raise Denied("proof is for a different action", code="action_mismatch")
         reference = claims.get("grant")
         if not isinstance(reference, dict):
             raise SignatureError("proof names no grant", code="token_malformed")
@@ -200,16 +213,19 @@ class Verifier:
         risk = self._risk_of(action)
         if risk is None:
             raise Denied(f"unknown action {action!r}", code="unknown_action")
+        if amount != self._cost_of(action, body):
+            raise Denied("proof states the wrong amount", code="amount_mismatch")
         decision = evaluate(
             grant, held.state, action=action, risk=risk, amount=amount, now=now,
-            content_digest=httpsig.content_digest(body), enforce_first_use=False,
+            method=method, url=url, content_digest=httpsig.content_digest(body),
+            enforce_first_use=False,
             leeway=self._leeway,
         )
         if not decision.allowed:
             raise Denied(f"{action}: {decision.reason}", code=decision.reason)
 
         record_use(grant, held.state, amount=amount, now=now)
-        self._seen_proofs[proof_id] = claims["exp"] + self._leeway
+        self._seen_proofs[(issuer, proof_id)] = claims["exp"] + self._leeway
         return VerifiedAction(
             grant=grant,
             subject=grant.subject,
@@ -233,8 +249,8 @@ class Verifier:
         )
 
     def _forget_expired_proofs(self, now: int) -> None:
-        for proof_id in [p for p, expiry in self._seen_proofs.items() if expiry < now]:
-            del self._seen_proofs[proof_id]
+        for key in [k for k, expiry in self._seen_proofs.items() if expiry < now]:
+            del self._seen_proofs[key]
 
     # -- revocation ----------------------------------------------------------
 
