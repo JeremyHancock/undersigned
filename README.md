@@ -15,9 +15,11 @@ Python library that lets the service check three things for itself:
 It is aimed at non-payment actions: writing a record, sending a message,
 deleting data.
 
-This is a reference implementation. State is held in memory, the passkey in
-the tests is a software authenticator, and nothing here has been security
-reviewed.
+This is a reference implementation. State is held in memory. The automated
+tests use a software authenticator; the browser demo below has been run by
+hand with a real passkey. It has had one adversarial review pass by
+an AI reviewer, whose findings are fixed and covered by tests; that is not a
+security audit.
 
 ## The idea
 
@@ -29,7 +31,7 @@ once, and only what falls outside it comes back to them.
   how long. Inside it the agent acts without further prompts.
 - **Punch-through.** High and critical actions can never sit in a standing
   grant. Each needs a single-use grant, which can be pinned to one exact
-  request body.
+  request: method, URL and body.
 - **Proof on every request.** A short-lived token and an HTTP signature bind
   the request to the grant.
 - **Revocation push.** When the person revokes, the service is told, with
@@ -48,15 +50,29 @@ process:
 
 ```
 1. Account linked: the service pinned the human's passkey.
-2. Human signed a standing grant 386fbccc: read and write, medium risk, 1000 cents a month, 30 days.
+2. Human signed a standing grant 386fbccc: read and write, medium risk, 3 writes a day, 30 days.
 3. Agent wrote a note. Service verified: action=notes.write, human_verified=True.
 4. Same headers, different body: refused (digest_mismatch).
-5. Over budget: broker asks the human (budget_exceeded).
+5. Fourth write today: broker asks the human (budget_exceeded).
 6. Critical action under the standing grant: punches through (action_not_covered).
    Human signed a single-use grant pinned to that exact request; it went through.
    Second use of it: refused (grant_already_used).
 7. Human revoked the standing grant: broker refuses (grant_revoked), and the service was told.
 ```
+
+### With a real passkey, over HTTP
+
+```bash
+python examples/webdemo/server.py
+```
+
+This starts two servers that only talk over HTTP: a broker at
+`http://localhost:8000` (it opens in your browser) and a notes service at
+`http://localhost:8001`. You create a passkey, sign a standing grant with it,
+then let the agent write notes, exceed its budget, send a tampered request,
+and try to delete everything. It is a single-user local demo: one account,
+state in memory. `tests/test_webdemo.py` drives the same two servers with a
+software passkey.
 
 ## Who signs what
 
@@ -72,8 +88,10 @@ gets its requests signed), the **service** (the API being called), and the
 | Revocation event | the broker | "That grant has ended." |
 
 The service runs the same envelope check as the broker, against the grant the
-person signed, using its own risk rating for each action and its own spend
-tally. A broker that claims more than the grant allows is refused.
+person signed. It decides for itself which action an endpoint performs, how
+risky that action is and what it costs, and keeps its own spend tally. Nothing
+the broker says about risk or cost is taken on trust, so a broker (or a stolen
+broker key) that claims more than the grant allows is refused.
 
 ## Use it
 
@@ -82,21 +100,27 @@ Broker side:
 ```python
 from undersigned import Broker, Budget, SigningKey, StepUpRequired
 
+RISKS = {"notes.read": "low", "notes.write": "medium", "notes.purge": "critical"}
+def cost_of(action, body):          # what an action draws from a budget
+    return 1 if action == "notes.write" else 0
+
 broker = Broker(issuer="https://broker.example", key=SigningKey.generate(),
-                rp_id="broker.example", origin="https://broker.example")
+                rp_id="broker.example", origin="https://broker.example",
+                risk_of=RISKS.get, cost_of=cost_of)
 
 # 1. Draft a grant and show it to the person.
 grant = broker.propose(audience="https://notes.example", subject="acct_42",
                        actions=["notes.read", "notes.write"], max_risk="medium",
-                       budget=Budget(1000, "USD-cents", "month"), duration=30 * 86400)
+                       budget=Budget(3, "writes", "day"), duration=30 * 86400)
 
 # 2. Run a passkey ceremony with grant.digest() as the challenge, then:
 receipt = broker.activate(grant.grant_id, evidence, credential_public_key=cose_key)
 #    Deliver `receipt` to the service (or give Broker an Outbox and endpoints).
 
-# 3. For each agent action:
+# 3. For each agent action. Risk and cost come from the broker's own catalog,
+#    never from the agent asking.
 try:
-    headers = broker.authorize(grant.grant_id, action="notes.write", risk="medium",
+    headers = broker.authorize(grant.grant_id, action="notes.write",
                                method="POST", url=url, body=body)
 except StepUpRequired as why:   # first_use, budget_exceeded, risk_exceeds_grant, ...
     ...                         # ask the person; for one action, a single-use grant
@@ -116,13 +140,18 @@ verifier = Verifier(
     brokers={"https://broker.example": BrokerTrust(
         KeySet.from_jwks(broker_jwks), rp_id="broker.example",
         origin="https://broker.example")},
-    risk_of={"notes.read": "low", "notes.write": "medium", "notes.purge": "critical"}.get,
+    risk_of=RISKS.get, cost_of=cost_of,      # the service's own catalog
 )
 
-verifier.pin_passkey("acct_42", credential_id, cose_public_key)  # at account linking
+# At account linking:
+verifier.pin_passkey("https://broker.example", "acct_42", credential_id, cose_public_key)
 verifier.accept_grant(receipt)                                   # POST /grants
-verified = verifier.verify_request(method=..., url=..., headers=..., body=...)
 verifier.accept_event(event)                                     # POST /events
+
+# In the handler for POST /v1/notes. `action` is what this endpoint does, from
+# your routing; `url` is the full URL the request was sent to, query included.
+verified = verifier.verify_request(action="notes.write", method="POST", url=url,
+                                   headers=headers, body=body)
 ```
 
 `verified.record`, the request body and the grant receipt together are enough
@@ -177,7 +206,10 @@ grant-revoked event) and the `Grant-Proof` header.
   mint grants; it can still sign requests inside grants that already exist.
 - **Per-request, the person is not present.** Under a standing grant the
   person signs the envelope, not each request. Single-use grants can be pinned
-  to one request body.
+  to one request (method, URL and body).
+- **The catalog is yours.** Risk and cost are whatever `risk_of` and `cost_of`
+  say on each side. The defaults treat every action as free, so a budget only
+  bites once you supply `cost_of`.
 - **Counting:** an action is counted against the budget when the broker signs
   it, whether or not the request then succeeds.
 

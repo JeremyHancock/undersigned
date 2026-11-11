@@ -1,8 +1,9 @@
 """At-least-once delivery of receipts and revocation events to a service.
 
 Delivery is tried once inline, then retried with backoff by whoever calls
-:meth:`Outbox.deliver_due` (a background task, a cron job). Receivers must be
-idempotent; the tokens carry a ``jti`` for that.
+:meth:`Outbox.deliver_due` (a background task, a cron job). By default it never
+gives up: an undelivered revocation is exactly the one that matters. Receivers
+must be idempotent; the tokens carry a ``jti`` for that.
 """
 
 from __future__ import annotations
@@ -18,7 +19,6 @@ from typing import Callable
 Sender = Callable[[str, bytes, dict[str, str]], int]
 
 BACKOFF_SECONDS = (5, 15, 45, 135, 300)
-MAX_ATTEMPTS = 10
 
 
 def http_post(url: str, body: bytes, headers: dict[str, str]) -> int:
@@ -50,7 +50,7 @@ class Outbox:
         *,
         clock: Callable[[], float] = time.time,
         backoff: tuple[int, ...] = BACKOFF_SECONDS,
-        max_attempts: int = MAX_ATTEMPTS,
+        max_attempts: int | None = None,
     ):
         self._send = send
         self._clock = clock
@@ -89,7 +89,7 @@ class Outbox:
             delivery.status, delivery.last_error = "delivered", ""
             return True
         delivery.last_error = error
-        if delivery.attempts >= self._max_attempts:
+        if self._max_attempts is not None and delivery.attempts >= self._max_attempts:
             delivery.status = "failed"
         else:
             wait = self._backoff[min(delivery.attempts - 1, len(self._backoff) - 1)]

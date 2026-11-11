@@ -43,7 +43,9 @@ def _period_start(grant: Grant, now: int) -> int | None:
     length = BUDGET_PERIODS[grant.budget.period]
     if length is None:
         return grant.issued_at
-    return grant.issued_at + ((now - grant.issued_at) // length) * length
+    # Never before the first window: a clock a few seconds behind the issuer
+    # must not open an extra budget period.
+    return grant.issued_at + max(0, (now - grant.issued_at) // length) * length
 
 
 def spent_this_period(grant: Grant, state: GrantState, now: int) -> int:
@@ -61,6 +63,8 @@ def evaluate(
     risk: str,
     amount: int = 0,
     now: int,
+    method: str | None = None,
+    url: str | None = None,
     content_digest: str | None = None,
     enforce_first_use: bool = True,
     leeway: int = 0,
@@ -86,8 +90,12 @@ def evaluate(
         return Decision(STEP_UP, "action_not_covered")
     if risk_rank(risk) > risk_rank(grant.max_risk):
         return Decision(STEP_UP, "risk_exceeds_grant")
-    if grant.content_digest is not None and content_digest != grant.content_digest:
-        return Decision(DENY, "request_does_not_match_grant")
+    if grant.request is not None:
+        pinned = grant.request
+        if (method, url, content_digest) != (
+            pinned.method, pinned.target_uri, pinned.content_digest
+        ):
+            return Decision(DENY, "request_does_not_match_grant")
     if enforce_first_use and grant.first_use_confirmation and not state.first_use_confirmed:
         return Decision(STEP_UP, "first_use")
     if grant.budget is not None:

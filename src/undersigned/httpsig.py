@@ -15,6 +15,7 @@ import base64
 import binascii
 import hashlib
 import hmac
+import re
 import secrets
 from dataclasses import dataclass
 from typing import Mapping
@@ -273,7 +274,7 @@ def _parse_signature_params(raw: str) -> tuple[tuple[str, ...], dict[str, object
         name, _, value = piece.partition("=")
         if value.startswith('"') and value.endswith('"') and len(value) >= 2:
             params[name] = value[1:-1].replace('\\"', '"').replace("\\\\", "\\")
-        elif value.lstrip("-").isdigit():
+        elif re.fullmatch(r"-?[0-9]{1,15}", value):
             params[name] = int(value)
         else:
             params[name] = value

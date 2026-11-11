@@ -9,7 +9,7 @@ from typing import Callable, Mapping
 from undersigned import httpsig, tokens
 from undersigned.errors import Denied, UndersignedError, StepUpRequired
 from undersigned.evidence import HumanEvidence, verify_evidence
-from undersigned.grant import Budget, Grant
+from undersigned.grant import Budget, Grant, PinnedRequest
 from undersigned.keys import SigningKey, jwks
 from undersigned.outbox import Outbox
 from undersigned.policy import ALLOW, STEP_UP, GrantState, evaluate, record_use
@@ -38,6 +38,10 @@ class _Record:
 class Broker:
     """Holds grants and signs the requests an agent makes under them.
 
+    ``risk_of(action)`` and ``cost_of(action, body)`` are the broker's own
+    catalog of what each action is and what it draws from a budget. The agent
+    asking for a signature never supplies either.
+
     State is kept in memory. A real deployment would persist ``_records`` and
     the outbox; nothing else here is stateful.
     """
@@ -49,6 +53,8 @@ class Broker:
         key: SigningKey,
         rp_id: str,
         origin: str,
+        risk_of: Callable[[str], str | None],
+        cost_of: Callable[[str, bytes], int] = lambda action, body: 0,
         services: Mapping[str, ServiceEndpoints] | None = None,
         outbox: Outbox | None = None,
         clock: Callable[[], float] = time.time,
@@ -58,6 +64,8 @@ class Broker:
         self.key = key
         self.rp_id = rp_id
         self.origin = origin
+        self._risk_of = risk_of
+        self._cost_of = cost_of
         self.services = dict(services or {})
         self.outbox = outbox
         self._clock = clock
@@ -89,7 +97,7 @@ class Broker:
         budget: Budget | None = None,
         first_use_confirmation: bool = False,
         single_use: bool = False,
-        content_digest: str | None = None,
+        request: PinnedRequest | None = None,
     ) -> Grant:
         """Draft a grant for the human to review. Nothing is authorized yet.
 
@@ -109,7 +117,7 @@ class Broker:
             budget=budget,
             first_use_confirmation=first_use_confirmation,
             single_use=single_use,
-            content_digest=content_digest,
+            request=request,
         )
         self._records[grant.grant_id] = _Record(grant=grant, state=GrantState())
         return grant
@@ -130,6 +138,8 @@ class Broker:
         record = self._record(grant_id)
         if record.state.revoked:
             raise Denied("grant was revoked", code="grant_revoked")
+        if record.active:
+            raise Denied("grant is already active", code="grant_already_active")
         if evidence is not None:
             if credential_public_key is None:
                 raise UndersignedError("credential_public_key is required to check evidence")
@@ -153,6 +163,8 @@ class Broker:
         record = self._record(grant_id)
         if not record.active:
             raise Denied("grant is not active", code="grant_not_active")
+        if record.state.revoked:
+            raise Denied("grant was revoked", code="grant_revoked")
         return tokens.encode_receipt(
             self.key,
             document=record.grant.to_document(),
@@ -171,11 +183,9 @@ class Broker:
         grant_id: str,
         *,
         action: str,
-        risk: str,
         method: str,
         url: str,
         body: bytes,
-        amount: int = 0,
     ) -> dict[str, str]:
         """Check the action against the grant and return headers that prove it.
 
@@ -188,11 +198,15 @@ class Broker:
         grant = record.grant
         if not record.active:
             raise Denied("grant is not active", code="grant_not_active")
+        risk = self._risk_of(action)
+        if risk is None:
+            raise Denied(f"unknown action {action!r}", code="unknown_action")
+        amount = self._cost_of(action, body)
         now = self._now()
         digest_header = httpsig.content_digest(body)
         decision = evaluate(
             grant, record.state, action=action, risk=risk, amount=amount, now=now,
-            content_digest=digest_header,
+            method=method, url=url, content_digest=digest_header,
         )
         if decision.outcome == STEP_UP:
             raise StepUpRequired(f"{action}: {decision.reason}", code=decision.reason)

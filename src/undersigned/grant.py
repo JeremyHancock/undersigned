@@ -23,6 +23,8 @@ RISK_TIERS = ("low", "medium", "high", "critical")
 #: needs its own single-use approval.
 STANDING_RISK_CEILING = "medium"
 
+_MAX_INT = 2**53 - 1  # largest integer JSON carries safely (RFC 8785)
+
 BUDGET_PERIODS = {"day": 86_400, "week": 7 * 86_400, "month": 30 * 86_400, "total": None}
 
 
@@ -45,12 +47,37 @@ class Budget:
     period: str = "month"
 
     def __post_init__(self):
-        if isinstance(self.limit, bool) or not isinstance(self.limit, int) or self.limit < 0:
+        if (isinstance(self.limit, bool) or not isinstance(self.limit, int)
+                or not 0 <= self.limit <= _MAX_INT):
             raise InvalidGrant("budget limit must be a non-negative integer")
         if not self.unit or not isinstance(self.unit, str):
             raise InvalidGrant("budget unit is required")
         if self.period not in BUDGET_PERIODS:
             raise InvalidGrant(f"unknown budget period: {self.period!r}")
+
+
+@dataclass(frozen=True)
+class PinnedRequest:
+    """One exact HTTP request: its method, absolute URL and body digest.
+
+    A single-use grant carrying this can authorize that request and no other.
+    ``content_digest`` is an RFC 9530 ``Content-Digest`` value.
+    """
+
+    method: str
+    target_uri: str
+    content_digest: str
+
+    def __post_init__(self):
+        for name in ("method", "target_uri", "content_digest"):
+            if not isinstance(getattr(self, name), str) or not getattr(self, name):
+                raise InvalidGrant(f"pinned request {name} must be a non-empty string")
+
+    @classmethod
+    def of(cls, method: str, url: str, body: bytes) -> "PinnedRequest":
+        from undersigned.httpsig import content_digest  # avoids an import cycle
+
+        return cls(method=method, target_uri=url, content_digest=content_digest(body))
 
 
 @dataclass(frozen=True)
@@ -65,9 +92,8 @@ class Grant:
     budget: Budget | None = None
     first_use_confirmation: bool = False
     single_use: bool = False
-    #: Single-use grants may be pinned to one exact request body
-    #: (an RFC 9530 ``Content-Digest`` value).
-    content_digest: str | None = None
+    #: Single-use grants may be pinned to one exact request.
+    request: PinnedRequest | None = None
     grant_id: str = field(default_factory=lambda: str(uuid.uuid4()))
 
     def __post_init__(self):
@@ -81,7 +107,7 @@ class Grant:
             raise InvalidGrant("actions must be unique")
         for name in ("issued_at", "expires_at"):
             value = getattr(self, name)
-            if isinstance(value, bool) or not isinstance(value, int):
+            if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= _MAX_INT:
                 raise InvalidGrant(f"{name} must be an integer timestamp")
         if self.expires_at <= self.issued_at:
             raise InvalidGrant("expires_at must be after issued_at")
@@ -96,8 +122,10 @@ class Grant:
                 raise InvalidGrant(
                     f"a standing grant cannot cover risk above {STANDING_RISK_CEILING!r}"
                 )
-            if self.content_digest is not None:
-                raise InvalidGrant("only single-use grants can be pinned to a request body")
+            if self.request is not None:
+                raise InvalidGrant("only single-use grants can be pinned to a request")
+        if self.request is not None and not isinstance(self.request, PinnedRequest):
+            raise InvalidGrant("request must be a PinnedRequest")
 
     # -- document form -----------------------------------------------------
 
@@ -116,8 +144,12 @@ class Grant:
                 "unit": self.budget.unit,
                 "period": self.budget.period,
             }
-        if self.content_digest is not None:
-            detail["content_digest"] = self.content_digest
+        if self.request is not None:
+            detail["request"] = {
+                "method": self.request.method,
+                "target_uri": self.request.target_uri,
+                "content_digest": self.request.content_digest,
+            }
         return {
             "version": GRANT_VERSION,
             "grant_id": self.grant_id,
@@ -153,7 +185,7 @@ class Grant:
                 detail,
                 {"type", "locations", "actions", "max_risk", "single_use",
                  "first_use_confirmation"},
-                optional={"budget", "content_digest"},
+                optional={"budget", "request"},
             )
             if detail["type"] != DETAIL_TYPE:
                 raise InvalidGrant(f"unsupported authorization_details type: {detail['type']!r}")
@@ -168,6 +200,10 @@ class Grant:
             if "budget" in detail:
                 _expect_keys(detail["budget"], {"limit", "unit", "period"})
                 budget = Budget(**detail["budget"])
+            request = None
+            if "request" in detail:
+                _expect_keys(detail["request"], {"method", "target_uri", "content_digest"})
+                request = PinnedRequest(**detail["request"])
             return cls(
                 grant_id=document["grant_id"],
                 issuer=document["iss"],
@@ -180,7 +216,7 @@ class Grant:
                 budget=budget,
                 first_use_confirmation=detail["first_use_confirmation"],
                 single_use=detail["single_use"],
-                content_digest=detail.get("content_digest"),
+                request=request,
             )
         except (KeyError, TypeError, AttributeError) as exc:
             raise InvalidGrant(f"malformed grant document: {exc}") from exc
@@ -189,7 +225,10 @@ class Grant:
 
     def digest(self) -> bytes:
         """SHA-256 of the canonical document. This is the WebAuthn challenge."""
-        return jcs.digest(self.to_document())
+        try:
+            return jcs.digest(self.to_document())
+        except ValueError as exc:
+            raise InvalidGrant(f"grant cannot be canonicalized: {exc}") from exc
 
     def digest_hex(self) -> str:
         return self.digest().hex()
