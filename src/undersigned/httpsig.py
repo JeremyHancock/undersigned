@@ -20,8 +20,8 @@ from dataclasses import dataclass
 from typing import Mapping
 from urllib.parse import urlsplit
 
-from grantproof.errors import SignatureError
-from grantproof.keys import KeySet, SigningKey
+from undersigned.errors import SignatureError
+from undersigned.keys import KeySet, SigningKey
 
 ALGORITHM = "ed25519"
 DEFAULT_LABEL = "gp"

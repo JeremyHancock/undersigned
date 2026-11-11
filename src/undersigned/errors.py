@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 
-class GrantProofError(Exception):
-    """Base class for all grantproof errors."""
+class UndersignedError(Exception):
+    """Base class for all undersigned errors."""
 
-    code = "grantproof_error"
+    code = "undersigned_error"
 
     def __init__(self, message: str = "", *, code: str | None = None):
         super().__init__(message or code or self.code)
@@ -14,31 +14,31 @@ class GrantProofError(Exception):
             self.code = code
 
 
-class InvalidGrant(GrantProofError):
+class InvalidGrant(UndersignedError):
     """The grant document is malformed or breaks a structural rule."""
 
     code = "invalid_grant"
 
 
-class EvidenceError(GrantProofError):
+class EvidenceError(UndersignedError):
     """The human-signed evidence for a grant did not verify."""
 
     code = "invalid_evidence"
 
 
-class SignatureError(GrantProofError):
+class SignatureError(UndersignedError):
     """An HTTP message signature or token signature did not verify."""
 
     code = "invalid_signature"
 
 
-class Denied(GrantProofError):
+class Denied(UndersignedError):
     """The action is not authorized and human approval would not change that."""
 
     code = "denied"
 
 
-class StepUpRequired(GrantProofError):
+class StepUpRequired(UndersignedError):
     """The standing grant does not cover this action; a human must approve it.
 
     ``code`` says why: ``action_not_covered``, ``risk_exceeds_grant``,
@@ -48,7 +48,7 @@ class StepUpRequired(GrantProofError):
     code = "step_up_required"
 
 
-class UnknownGrant(GrantProofError):
+class UnknownGrant(UndersignedError):
     """The service has not received the grant a proof refers to."""
 
     code = "unknown_grant"

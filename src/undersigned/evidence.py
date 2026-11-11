@@ -12,8 +12,8 @@ from dataclasses import dataclass
 
 from webauthn import verify_authentication_response
 
-from grantproof.errors import EvidenceError
-from grantproof.keys import b64url, b64url_decode
+from undersigned.errors import EvidenceError
+from undersigned.keys import b64url, b64url_decode
 
 EVIDENCE_TYPE = "webauthn"
 

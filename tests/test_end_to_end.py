@@ -3,18 +3,18 @@
 import jwt
 import pytest
 
-from grantproof import tokens
-from grantproof.broker import Broker, ServiceEndpoints
-from grantproof.errors import (
-    Denied, EvidenceError, GrantProofError, InvalidGrant, SignatureError, StepUpRequired,
+from undersigned import tokens
+from undersigned.broker import Broker, ServiceEndpoints
+from undersigned.errors import (
+    Denied, EvidenceError, UndersignedError, InvalidGrant, SignatureError, StepUpRequired,
     UnknownGrant,
 )
-from grantproof.grant import Budget
-from grantproof.httpsig import content_digest
-from grantproof.keys import KeySet, SigningKey
-from grantproof.outbox import Outbox
-from grantproof.service import BrokerTrust, Verifier, push_error
-from grantproof.testing import SoftAuthenticator
+from undersigned.grant import Budget
+from undersigned.httpsig import content_digest
+from undersigned.keys import KeySet, SigningKey
+from undersigned.outbox import Outbox
+from undersigned.service import BrokerTrust, Verifier, push_error
+from undersigned.testing import SoftAuthenticator
 
 ISSUER = "https://broker.example"
 SERVICE = "https://notes.example"
@@ -67,7 +67,7 @@ class World:
                 return 201
             self.verifier.accept_event(token)
             return 202
-        except GrantProofError:
+        except UndersignedError:
             return 400
 
     def grant(self, *, sign=True, **overrides):
@@ -93,7 +93,7 @@ class World:
 
 
 def code_of(callable_, *args, **kwargs):
-    with pytest.raises(GrantProofError) as caught:
+    with pytest.raises(UndersignedError) as caught:
         callable_(*args, **kwargs)
     return caught.value.code
 
@@ -194,8 +194,8 @@ def test_service_rejects_a_proof_the_grant_does_not_cover():
         grant_digest=grant.digest_hex(), action="notes.purge", amount=0,
         now=int(world.clock()), ttl=30,
     )
-    from grantproof import httpsig
-    from grantproof.broker import SIGNATURE_TAG, SIGNED_COMPONENTS
+    from undersigned import httpsig
+    from undersigned.broker import SIGNATURE_TAG, SIGNED_COMPONENTS
     headers = {"Content-Digest": content_digest(BODY), "Grant-Proof": forged}
     headers.update(httpsig.sign_request(
         world.key, method="POST", url=URL, headers=headers, components=SIGNED_COMPONENTS,

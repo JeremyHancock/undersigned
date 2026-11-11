@@ -1,24 +1,62 @@
-# grantproof
+# undersigned
 
-A small Python library for one problem: when an AI agent acts on a person's
-behalf, let the service receiving the request check for itself that the person
-authorized it, and stop honoring that authorization the moment the person
-revokes it.
+[![tests](https://github.com/JeremyHancock/undersigned/actions/workflows/test.yml/badge.svg)](https://github.com/JeremyHancock/undersigned/actions/workflows/test.yml)
 
-It is for non-payment actions (write a record, send a message, delete data).
-It has three parts:
+When an AI agent calls an API on someone's behalf, the API usually sees a
+bearer token and has to take the rest on trust. `undersigned` is a small
+Python library that lets the service check three things for itself:
 
-- **Standing grants.** The person approves an envelope once: which actions,
-  up to what risk, an optional budget, for how long. The agent then acts
-  inside it without further prompts. Anything above the envelope "punches
-  through" to a single-use approval for that one action.
-- **Request-bound proof.** Every request made under a grant carries a signed
-  proof tied to that exact method, URL and body.
+- a specific person approved a bounded set of actions, and signed that
+  approval with their own passkey;
+- this exact request (method, URL and body) is being made under that
+  approval;
+- the approval has not been revoked.
+
+It is aimed at non-payment actions: writing a record, sending a message,
+deleting data.
+
+This is a reference implementation. State is held in memory, the passkey in
+the tests is a software authenticator, and nothing here has been security
+reviewed.
+
+## The idea
+
+Asking a person to approve every agent action does not scale; letting the
+agent do anything does not either. Here the person approves an **envelope**
+once, and only what falls outside it comes back to them.
+
+- **Standing grant.** Which actions, up to what risk, an optional budget, for
+  how long. Inside it the agent acts without further prompts.
+- **Punch-through.** High and critical actions can never sit in a standing
+  grant. Each needs a single-use grant, which can be pinned to one exact
+  request body.
+- **Proof on every request.** A short-lived token and an HTTP signature bind
+  the request to the grant.
 - **Revocation push.** When the person revokes, the service is told, with
   retries.
 
-This is a reference implementation, extracted from a larger project. State is
-held in memory and nothing here has been security reviewed.
+## See it run
+
+```bash
+pip install -e ".[dev]"
+python -m undersigned.demo
+pytest
+```
+
+The demo plays a broker, a notes service and a person with a passkey in one
+process:
+
+```
+1. Account linked: the service pinned the human's passkey.
+2. Human signed a standing grant 386fbccc: read and write, medium risk, 1000 cents a month, 30 days.
+3. Agent wrote a note. Service verified: action=notes.write, human_verified=True.
+4. Same headers, different body: refused (digest_mismatch).
+5. Over budget: broker asks the human (budget_exceeded).
+6. Critical action under the standing grant: punches through (action_not_covered).
+   Human signed a single-use grant pinned to that exact request; it went through.
+   Second use of it: refused (grant_already_used).
+7. Human revoked the standing grant: broker refuses (grant_revoked), and the service was told.
+```
 
 ## Who signs what
 
@@ -37,20 +75,12 @@ The service runs the same envelope check as the broker, against the grant the
 person signed, using its own risk rating for each action and its own spend
 tally. A broker that claims more than the grant allows is refused.
 
-## Try it
-
-```bash
-pip install -e ".[dev]"
-python -m grantproof.demo     # the whole flow, in one process
-pytest                        # 66 tests
-```
-
 ## Use it
 
 Broker side:
 
 ```python
-from grantproof import Broker, Budget, SigningKey, StepUpRequired
+from undersigned import Broker, Budget, SigningKey, StepUpRequired
 
 broker = Broker(issuer="https://broker.example", key=SigningKey.generate(),
                 rp_id="broker.example", origin="https://broker.example")
@@ -79,7 +109,7 @@ event = broker.revoke(grant.grant_id)
 Service side:
 
 ```python
-from grantproof import BrokerTrust, KeySet, Verifier
+from undersigned import BrokerTrust, KeySet, Verifier
 
 verifier = Verifier(
     audience="https://notes.example",
@@ -128,8 +158,8 @@ the one action and its amount.
 | Keys | JWK / JWKS, RFC 7638 thumbprint as `kid` | Ed25519. |
 
 Two identifiers are minted here because nothing standard exists:
-`urn:grantproof:event:grant-revoked` (neither CAEP nor RISC has a grant-revoked
-event) and the `Grant-Proof` header.
+`urn:undersigned:event:grant-revoked` (neither CAEP nor RISC has a
+grant-revoked event) and the `Grant-Proof` header.
 
 ## What it does and does not prove
 
@@ -156,3 +186,18 @@ event) and the `Grant-Proof` header.
 Persistence (both sides keep state in memory), an HTTP server, the approval
 page and passkey registration, key rotation, an audit log, and algorithms
 other than Ed25519.
+
+## Layout
+
+| Module | What it holds |
+|---|---|
+| `grant.py`, `policy.py` | The grant document and the envelope check both sides run. |
+| `evidence.py` | Verifying the passkey assertion over a grant. |
+| `httpsig.py`, `tokens.py` | The wire formats. |
+| `broker.py`, `service.py` | The two roles. |
+| `outbox.py` | Delivery with retries. |
+| `testing.py`, `demo.py` | A software passkey and the walkthrough. |
+
+## License
+
+MIT.

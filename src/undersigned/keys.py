@@ -13,7 +13,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PublicKey,
 )
 
-from grantproof.errors import SignatureError
+from undersigned.errors import SignatureError
 
 
 def b64url(data: bytes) -> str:

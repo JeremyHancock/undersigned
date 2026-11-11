@@ -2,9 +2,9 @@ import base64
 
 import pytest
 
-from grantproof import httpsig
-from grantproof.errors import SignatureError
-from grantproof.keys import KeySet, SigningKey
+from undersigned import httpsig
+from undersigned.errors import SignatureError
+from undersigned.keys import KeySet, SigningKey
 
 URL = "https://notes.example/v1/notes?draft=1"
 BODY = b'{"title":"hello"}'

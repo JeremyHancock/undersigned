@@ -1,11 +1,11 @@
 import pytest
 
-from grantproof import jcs
-from grantproof.errors import EvidenceError, InvalidGrant
-from grantproof.evidence import HumanEvidence, verify_evidence
-from grantproof.grant import Budget, Grant
-from grantproof.policy import ALLOW, DENY, STEP_UP, GrantState, evaluate, record_use
-from grantproof.testing import SoftAuthenticator
+from undersigned import jcs
+from undersigned.errors import EvidenceError, InvalidGrant
+from undersigned.evidence import HumanEvidence, verify_evidence
+from undersigned.grant import Budget, Grant
+from undersigned.policy import ALLOW, DENY, STEP_UP, GrantState, evaluate, record_use
+from undersigned.testing import SoftAuthenticator
 
 RP_ID = "broker.example"
 ORIGIN = "https://broker.example"

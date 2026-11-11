@@ -12,11 +12,11 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass, field
 
-from grantproof import jcs
-from grantproof.errors import InvalidGrant
+from undersigned import jcs
+from undersigned.errors import InvalidGrant
 
 GRANT_VERSION = "1"
-DETAIL_TYPE = "urn:grantproof:grant:v1"
+DETAIL_TYPE = "urn:undersigned:grant:v1"
 
 RISK_TIERS = ("low", "medium", "high", "critical")
 #: The highest risk tier a standing grant may cover. Anything above always

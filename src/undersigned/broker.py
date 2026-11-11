@@ -6,13 +6,13 @@ import time
 from dataclasses import dataclass
 from typing import Callable, Mapping
 
-from grantproof import httpsig, tokens
-from grantproof.errors import Denied, GrantProofError, StepUpRequired
-from grantproof.evidence import HumanEvidence, verify_evidence
-from grantproof.grant import Budget, Grant
-from grantproof.keys import SigningKey, jwks
-from grantproof.outbox import Outbox
-from grantproof.policy import ALLOW, STEP_UP, GrantState, evaluate, record_use
+from undersigned import httpsig, tokens
+from undersigned.errors import Denied, UndersignedError, StepUpRequired
+from undersigned.evidence import HumanEvidence, verify_evidence
+from undersigned.grant import Budget, Grant
+from undersigned.keys import SigningKey, jwks
+from undersigned.outbox import Outbox
+from undersigned.policy import ALLOW, STEP_UP, GrantState, evaluate, record_use
 
 SIGNATURE_TAG = "grant-proof"
 SIGNED_COMPONENTS = ("@method", "@target-uri", "content-digest", "grant-proof")
@@ -132,7 +132,7 @@ class Broker:
             raise Denied("grant was revoked", code="grant_revoked")
         if evidence is not None:
             if credential_public_key is None:
-                raise GrantProofError("credential_public_key is required to check evidence")
+                raise UndersignedError("credential_public_key is required to check evidence")
             verify_evidence(
                 evidence,
                 challenge=record.grant.digest(),

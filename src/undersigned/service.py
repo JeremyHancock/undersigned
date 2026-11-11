@@ -6,13 +6,13 @@ import time
 from dataclasses import dataclass, field
 from typing import Callable, Mapping
 
-from grantproof import httpsig, tokens
-from grantproof.broker import SIGNATURE_TAG, SIGNED_COMPONENTS
-from grantproof.errors import Denied, EvidenceError, InvalidGrant, SignatureError, UnknownGrant
-from grantproof.evidence import HumanEvidence, verify_evidence
-from grantproof.grant import Grant
-from grantproof.keys import KeySet
-from grantproof.policy import GrantState, evaluate, record_use
+from undersigned import httpsig, tokens
+from undersigned.broker import SIGNATURE_TAG, SIGNED_COMPONENTS
+from undersigned.errors import Denied, EvidenceError, InvalidGrant, SignatureError, UnknownGrant
+from undersigned.evidence import HumanEvidence, verify_evidence
+from undersigned.grant import Grant
+from undersigned.keys import KeySet
+from undersigned.policy import GrantState, evaluate, record_use
 
 
 @dataclass(frozen=True)

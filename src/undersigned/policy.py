@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from grantproof.grant import BUDGET_PERIODS, Grant, risk_rank
+from undersigned.grant import BUDGET_PERIODS, Grant, risk_rank
 
 ALLOW = "allow"
 STEP_UP = "step_up"

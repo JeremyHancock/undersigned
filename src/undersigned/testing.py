@@ -9,8 +9,8 @@ import os
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec
 
-from grantproof.evidence import HumanEvidence
-from grantproof.keys import b64url
+from undersigned.evidence import HumanEvidence
+from undersigned.keys import b64url
 
 _FLAG_USER_PRESENT = 0x01
 _FLAG_USER_VERIFIED = 0x04

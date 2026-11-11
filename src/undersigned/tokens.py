@@ -14,15 +14,15 @@ import uuid
 
 import jwt
 
-from grantproof.errors import SignatureError
-from grantproof.keys import KeySet, SigningKey
+from undersigned.errors import SignatureError
+from undersigned.keys import KeySet, SigningKey
 
 PROOF_TYP = "grant-proof+jwt"
 RECEIPT_TYP = "grant-receipt+jwt"
 SET_TYP = "secevent+jwt"
 
-ACTION_DETAIL_TYPE = "urn:grantproof:action:v1"
-EVENT_GRANT_REVOKED = "urn:grantproof:event:grant-revoked"
+ACTION_DETAIL_TYPE = "urn:undersigned:action:v1"
+EVENT_GRANT_REVOKED = "urn:undersigned:event:grant-revoked"
 
 PROOF_HEADER = "Grant-Proof"
 RECEIPT_MEDIA_TYPE = "application/jwt"

@@ -1,4 +1,4 @@
-"""A walk through the whole flow in one process: ``python -m grantproof.demo``.
+"""A walk through the whole flow in one process: ``python -m undersigned.demo``.
 
 A broker, a notes service and a human with a (software) passkey. No network:
 deliveries are handed straight to the service.
@@ -6,12 +6,12 @@ deliveries are handed straight to the service.
 
 from __future__ import annotations
 
-from grantproof import (
-    Broker, BrokerTrust, Budget, GrantProofError, KeySet, Outbox, ServiceEndpoints, SigningKey,
+from undersigned import (
+    Broker, BrokerTrust, Budget, UndersignedError, KeySet, Outbox, ServiceEndpoints, SigningKey,
     StepUpRequired, Verifier,
 )
-from grantproof.httpsig import content_digest
-from grantproof.testing import SoftAuthenticator
+from undersigned.httpsig import content_digest
+from undersigned.testing import SoftAuthenticator
 
 BROKER = "https://broker.example"
 SERVICE = "https://notes.example"
@@ -70,7 +70,7 @@ def main() -> None:
     try:
         verifier.verify_request(method="POST", url=f"{SERVICE}/v1/notes.write",
                                 headers=headers, body=b'{"title":"tampered"}')
-    except GrantProofError as exc:
+    except UndersignedError as exc:
         print(f"4. Same headers, different body: refused ({exc.code}).")
 
     try:
@@ -89,13 +89,13 @@ def main() -> None:
     print("   Human signed a single-use grant pinned to that exact request; it went through.")
     try:
         act(once, "notes.purge", purge)
-    except GrantProofError as exc:
+    except UndersignedError as exc:
         print(f"   Second use of it: refused ({exc.code}).")
 
     broker.revoke(standing.grant_id)
     try:
         act(standing, "notes.read", b"{}")
-    except GrantProofError as exc:
+    except UndersignedError as exc:
         print(f"7. Human revoked the standing grant: broker refuses ({exc.code}), "
               "and the service was told.")
 

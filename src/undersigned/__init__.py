@@ -1,20 +1,20 @@
 """Standing grants, request-bound proof of human authorization, and revocation push."""
 
-from grantproof.broker import Broker, ServiceEndpoints
-from grantproof.errors import (
+from undersigned.broker import Broker, ServiceEndpoints
+from undersigned.errors import (
     Denied,
     EvidenceError,
-    GrantProofError,
+    UndersignedError,
     InvalidGrant,
     SignatureError,
     StepUpRequired,
     UnknownGrant,
 )
-from grantproof.evidence import HumanEvidence
-from grantproof.grant import Budget, Grant
-from grantproof.keys import KeySet, SigningKey
-from grantproof.outbox import Outbox
-from grantproof.service import BrokerTrust, VerifiedAction, Verifier, push_error
+from undersigned.evidence import HumanEvidence
+from undersigned.grant import Budget, Grant
+from undersigned.keys import KeySet, SigningKey
+from undersigned.outbox import Outbox
+from undersigned.service import BrokerTrust, VerifiedAction, Verifier, push_error
 
 __all__ = [
     "Broker",
@@ -23,7 +23,7 @@ __all__ = [
     "Denied",
     "EvidenceError",
     "Grant",
-    "GrantProofError",
+    "UndersignedError",
     "HumanEvidence",
     "InvalidGrant",
     "KeySet",
