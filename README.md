@@ -15,6 +15,9 @@ Python library that lets the service check three things for itself:
 It is aimed at non-payment actions: writing a record, sending a message,
 deleting data.
 
+[Design notes](docs/why.md): why an envelope, who signs what, and what an
+adversarial review broke.
+
 This is a reference implementation. State is held in memory. The automated
 tests use a software authenticator; the browser demo below has been run by
 hand with a real passkey. It has had one adversarial review pass by
